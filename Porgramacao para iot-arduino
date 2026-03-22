@@ -1,0 +1,217 @@
+\documentclass[12pt,a4paper]{article}
+
+% --- PACOTES DE SISTEMA E IDIOMA ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage[left=3cm,right=2cm,top=3cm,bottom=2cm]{geometry}
+\usepackage{indentfirst}
+
+% --- PACOTES GRÁFICOS E DIAGRAMAS (TikZ) ---
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, shadows, shadows.blur, fit}
+
+% --- PACOTES DE TABELAS E MATEMÁTICA ---
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{xcolor}
+
+% --- CONFIGURAÇÃO DE ESTILOS TIKZ REUTILIZÁVEIS ---
+\tikzset{
+    % Reduzido text width de 3cm para 2.4cm
+    block/.style={rectangle, draw, fill=blue!5, text width=2.4cm, text centered, rounded corners, minimum height=1.2cm, font=\sffamily\small, drop shadow},
+    mcu/.style={rectangle, draw, fill=gray!10, text width=4cm, text centered, minimum height=2.5cm, font=\bfseries\sffamily},
+    % Reduzido text width de 3cm para 2.4cm
+    sensor_style/.style={rectangle, draw, fill=green!10, text width=2.4cm, text centered, rounded corners, minimum height=1.2cm},
+    cloud/.style={draw, ellipse, fill=orange!10, text width=2.2cm, text centered, minimum height=1cm, font=\sffamily\small, drop shadow},
+    layer/.style={draw, dashed, inner sep=0.3cm, font=\sffamily\bfseries},
+    arrow/.style={-Stealth, thick},
+    line_gray/.style={-Stealth, thick, color=gray!80},
+    lifeline/.style={draw, thick, dashed, gray!80},
+    % Reduzido minimum width de 2.5cm para 2.0cm
+    actor/.style={rectangle, draw, fill=blue!10, minimum width=2.0cm, minimum height=1cm, rounded corners, font=\sffamily\bfseries, drop shadow},
+    protocol/.style={midway, font=\scriptsize\itshape, color=red!70!black},
+    process/.style={rectangle, draw, fill=blue!5, text width=3.2cm, text centered, minimum height=1cm, font=\sffamily\small},
+    decision/.style={diamond, draw, fill=yellow!10, text width=2.2cm, text centered, inner sep=0pt, font=\sffamily\scriptsize},
+    io/.style={trapezium, trapezium left angle=70, trapezium right angle=110, draw, fill=green!5, text width=2.6cm, text centered, font=\sffamily\small}
+}
+
+\title{Documentação Técnica Integrada: \\ \large Sistema de Monitoramento e Análise Agrícola IoT}
+\author{Engenharia de Sistemas}
+\date{2026}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introdução e Requisitos do Sistema}
+Este documento detalha a implementação de um sistema IoT para agricultura de precisão. O sistema foca na coleta multivariável de parâmetros de solo e na predição de riscos fitossanitários em tempo real.
+
+\subsection{Requisitos Funcionais (RF)}
+Abaixo, a Tabela \ref{tab:requisitos} detalha as funcionalidades principais que regem a arquitetura do projeto.
+
+\begin{table}[h!]
+\centering
+\caption{Detalhamento dos Requisitos Funcionais}
+\label{tab:requisitos}
+\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\toprule
+\textbf{ID} & \textbf{Nome} & \textbf{Descrição do Requisito} \\ \midrule
+\textbf{RF01} & Aquisição & Coleta de 7 parâmetros (N, P, K, pH, EC, Temp, Umid). \\
+\textbf{RF02} & Determinismo & Leitura do sensor a cada 10 segundos. \\
+\textbf{RF03} & Transmissão & Envio via Wi-Fi utilizando protocolo TCP/IP. \\
+\textbf{RF04} & Buffer & Retenção de 1.000 ciclos na memória volátil (FIFO). \\
+\textbf{RF05} & Inteligência & Cruzamento de dados para diagnóstico de bloqueio e fungos. \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Arquitetura de Alto Nível (System Architecture)}
+A arquitetura é dividida em três camadas principais, garantindo que o sinal industrial do campo seja traduzido e processado até a camada de aplicação.
+
+\begin{figure}[h!]
+\centering
+% Distância reduzida para garantir que caiba na margem
+\begin{tikzpicture}[node distance=1.2cm and 1.0cm]
+    % --- CAMADAS ---
+    \node [block] (sensors) {Sensores Agrícolas\\(7 Parâmetros)};
+    \node [block, right=of sensors] (max485) {Transceptor MAX485\\(RS485 $\rightarrow$ TTL)};
+    \node [block, right=of max485] (arduino) {Arduino Mega\\(Processamento)};
+    \node [block, right=of arduino] (esp) {Gateway ESP-01\\(TCP/IP Uplink)};
+    \node [block, above=1.5cm of esp] (buffer) {Buffer FIFO\\1.000 Ciclos};
+    \node [block, left=of buffer] (logic) {Matriz de\\Interdependência};
+    \node [cloud, left=of logic] (output) {Status\\Fitossanitário};
+
+    % --- CONEXÕES ---
+    \draw [line_gray] (sensors) -- node[south, font=\tiny] {Modbus RTU} (max485);
+    \draw [line_gray] (max485) -- node[south, font=\tiny] {TTL} (arduino);
+    \draw [line_gray] (arduino) -- node[south, font=\tiny] {UART} (esp);
+    \draw [line_gray] (esp) -- node[west, font=\tiny] {WiFi} (buffer);
+    \draw [line_gray] (buffer) -- (logic);
+    \draw [line_gray] (logic) -- (output);
+
+    % --- ENQUADRAMENTO ---
+    \node (field) [layer, fit=(sensors) (max485), label=below:Sensoriamento] {};
+    \node (gateway) [layer, fit=(arduino) (esp), label=below:Gateway] {};
+    \node (cloud_layer) [layer, fit=(buffer) (logic) (output), label=above:Software] {};
+\end{tikzpicture}
+\caption{Diagrama de Arquitetura de Camadas}
+\end{figure}
+
+\section{Documentação de Hardware e Esquemático}
+O hardware foi projetado para suportar o ambiente hostil de campo, utilizando o padrão RS485 pela sua imunidade a ruídos.
+
+\subsection{Mapeamento de I/O e Power Tree}
+O Arduino Mega centraliza as comunicações através de suas portas seriais nativas.
+
+\begin{table}[h!]
+\centering
+\caption{Mapeamento de Pinos e Protocolos}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
+\toprule
+\textbf{Componente} & \textbf{Porta} & \textbf{Protocolo} & \textbf{Função} \\ \midrule
+Sensor NPK & Serial 1 (18/19) & Modbus RTU & Leitura de dados industriais. \\
+ESP-01 & Serial 3 (14/15) & UART (TTL) & Bridge de dados para Nuvem. \\
+MAX485 & Digital 2 & GPIO & Controle de Fluxo (DE/RE). \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[node distance=2.5cm, auto, >=stealth]
+    \node [block, fill=blue!10] (fonte) {Fonte Externa \\ (12V - 24V)};
+    \node [sensor_style, right=2cm of fonte] (npk) {Sensor NPK};
+    \node [block, fill=blue!10, below=1.5cm of fonte] (arduino) {Arduino Mega};
+    \node [block, fill=blue!10, right=2cm of arduino] (perif) {MAX485 / ESP};
+
+    \path [arrow] (fonte) -- node[above] {VCC} (npk);
+    \path [arrow] (arduino) -- node[above] {5V / 3.3V} (perif);
+    \draw [thick, dashed, <->] (fonte.south) -- (arduino.north) node [midway, right, font=\tiny] {GND COMUM};
+\end{tikzpicture}
+\caption{Árvore de Alimentação (Power Tree)}
+\end{figure}
+
+\subsection{Notas de Design Eletrônico}
+\begin{itemize}
+    \item \textbf{MAX485:} Implementado resistor de terminação de $120\Omega$ entre as linhas A e B.
+    \item \textbf{ESP-01:} Utilizado divisor de tensão ($1k\Omega/2k\Omega$) no pino RX para compatibilidade com a lógica de 3.3V.
+\end{itemize}
+
+\newpage
+\section{Dinâmica de Comunicação (Sequence Diagram)}
+O diagrama abaixo ilustra o ciclo de vida de uma requisição de dados, desde o \textit{Polling} do Arduino até a confirmação de recebimento no Dashboard.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[font=\sffamily\scriptsize]
+    \node [actor] (arduino) {Arduino};
+    % Espaçamentos reduzidos de 1.8cm para 1.2cm para caber na página
+    \node [actor, left=1.2cm of arduino] (max485) {MAX485};
+    \node [actor, left=1.2cm of max485] (sensor) {Sensor};
+    \node [actor, right=1.2cm of arduino] (esp) {ESP-01};
+    \node [actor, right=1.2cm of esp] (web) {Dashboard};
+
+    \foreach \x in {sensor, max485, arduino, esp, web} { \draw [lifeline] (\x.south) -- +(0,-7cm); }
+
+    \draw [arrow] ($(arduino.south)+(0,-0.5)$) -- node[protocol, above] {Query (TTL)} ($(max485.south)+(0,-0.5)$);
+    \draw [arrow] ($(max485.south)+(0,-1.2)$) -- node[protocol, above] {RS485 Signal} ($(sensor.south)+(0,-1.2)$);
+    \draw [arrow] ($(sensor.south)+(0,-2.2)$) -- node[protocol, above] {Data (RS485)} ($(max485.south)+(0,-2.2)$);
+    \draw [arrow] ($(max485.south)+(0,-2.9)$) -- node[protocol, above] {Data (TTL)} ($(arduino.south)+(0,-2.9)$);
+    \draw [arrow] ($(arduino.south)+(0,-4.0)$) -- node[protocol, above] {Serial/JSON} ($(esp.south)+(0,-4.0)$);
+    \draw [arrow] ($(esp.south)+(0,-5.0)$) -- node[protocol, above] {TCP/IP (Wi-Fi)} ($(web.south)+(0,-5.0)$);
+    \draw [arrow, dashed] ($(web.south)+(0,-6.0)$) -- node[protocol, above] {ACK} ($(esp.south)+(0,-6.0)$);
+\end{tikzpicture}
+\caption{Fluxo de Sinais e Protocolos}
+\end{figure}
+
+\section{Lógica de Software e Análise (Activity Diagram)}
+Uma vez que os dados chegam ao Dashboard, inicia-se o processamento híbrido: a gestão do buffer FIFO e a inteligência agronômica.
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}[node distance=1.1cm]
+    \node [circle, fill=black, inner sep=2pt] (start) {};
+    \node [io, below=of start] (rx) {Recebe JSON (10s)};
+    \node [decision, below=of rx] (check) {Buffer $>$ 1000?};
+    \node [process, right=of check] (node_shift) {Array.shift()};
+    \node [process, below=of check, yshift=-0.5cm] (push) {Array.push()};
+    \node [process, below=of push] (logic) {Matriz Agronômica};
+    \node [decision, below=of logic] (risk) {Risco Detectado?};
+    \node [process, right=of risk] (alert) {Gerar Alerta};
+    \node [io, below=of risk, yshift=-0.5cm] (ui) {Renderizar UI};
+
+    \draw [arrow] (start) -- (rx); 
+    \draw [arrow] (rx) -- (check);
+    \draw [arrow] (check) -- node[anchor=south, font=\tiny] {Sim} (node_shift);
+    \draw [arrow] (node_shift) |- (push); 
+    \draw [arrow] (check) -- node[anchor=west, font=\tiny] {Não} (push);
+    \draw [arrow] (push) -- (logic); 
+    \draw [arrow] (logic) -- (risk);
+    \draw [arrow] (risk) -- node[anchor=south, font=\tiny] {Sim} (alert);
+    \draw [arrow] (alert) |- (ui); 
+    \draw [arrow] (risk) -- node[anchor=west, font=\tiny] {Não} (ui);
+\end{tikzpicture}
+\caption{Lógica de Processamento Híbrido}
+\end{figure}
+
+\section{Análise de Modos de Falha (FMEA)}
+A Tabela \ref{tab:fmea} apresenta as estratégias de mitigação para garantir a resiliência do sistema em campo.
+
+\begin{table}[h!]
+\centering
+\caption{FMEA - Hardware e Comunicação}
+\label{tab:fmea}
+\begin{tabularx}{\textwidth}{@{}l X X@{}}
+\toprule
+\textbf{Falha} & \textbf{Efeito} & \textbf{Mitigação} \\ \midrule
+Interferência EMI & Corrupção de pacotes. & Uso de cabos blindados (Shielded). \\
+Queda de Wi-Fi & Perda de tempo real. & Buffer local no ESP (se disponível). \\
+Curto no Sensor & Dano ao barramento. & Fusível de proteção na linha VCC\_EXT. \\ \bottomrule
+\end{tabularx}
+\end{table}
+
+\end{document}
